@@ -1,0 +1,61 @@
+
+name: AutoBuilder Build
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "autobuilder-addon-ci-source.zip"
+      - ".github/workflows/autobuild.yml"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Extract source
+        run: |
+          mkdir extracted
+          unzip -q autobuilder-addon-ci-source.zip -d extracted
+
+      - name: Find Gradle project
+        id: project
+        run: |
+          ROOT=$(find extracted -name settings.gradle -o -name settings.gradle.kts | head -n 1)
+          if [ -z "$ROOT" ]; then
+            ROOT=$(find extracted -name build.gradle -o -name build.gradle.kts | head -n 1)
+          fi
+          if [ -z "$ROOT" ]; then
+            echo "Không tìm thấy Gradle project"
+            exit 1
+          fi
+          echo "dir=$(dirname "$ROOT")" >> "$GITHUB_OUTPUT"
+
+      - name: Build JAR
+        run: |
+          cd "${{ steps.project.outputs.dir }}"
+          if [ -f ./gradlew ]; then
+            chmod +x ./gradlew
+            ./gradlew build --no-daemon
+          else
+            sudo apt-get update
+            sudo apt-get install -y gradle
+            gradle build --no-daemon
+          fi
+
+      - name: Upload JAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: AutoBuilder-JAR
+          path: |
+            extracted/**/build/libs/*.jar
+          if-no-files-found: error
